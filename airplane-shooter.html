@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Letadlo - Střílečka pro 2 hráče</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #1e3c72, #2a5298);
+        }
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #scores {
+            display: flex;
+            justify-content: space-around;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .player-score {
+            background: rgba(0,0,0,0.6);
+            padding: 15px 30px;
+            border-radius: 15px;
+            border: 3px solid;
+        }
+        #player1-score {
+            border-color: #00ff00;
+        }
+        #player2-score {
+            border-color: #ff00ff;
+        }
+        #timer {
+            font-size: 36px;
+            font-weight: bold;
+            margin-top: 10px;
+            color: #ffff00;
+        }
+        #startScreen, #endScreen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 100;
+        }
+        #endScreen {
+            display: none;
+        }
+        h1 {
+            font-size: 48px;
+            margin-bottom: 30px;
+            color: #00ffff;
+        }
+        .instructions {
+            font-size: 20px;
+            margin: 10px;
+            max-width: 600px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        button {
+            font-size: 28px;
+            padding: 15px 40px;
+            margin: 20px;
+            background: linear-gradient(45deg, #00ff00, #00aa00);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: scale(1.1);
+        }
+        .controls {
+            display: flex;
+            gap: 50px;
+            margin-top: 20px;
+        }
+        .control-box {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid;
+        }
+        .control-box.p1 {
+            border-color: #00ff00;
+        }
+        .control-box.p2 {
+            border-color: #ff00ff;
+        }
+        #finalScores {
+            font-size: 32px;
+            margin: 20px;
+        }
+        .winner {
+            font-size: 48px;
+            color: #ffd700;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="startScreen">
+        <h1>✈️ 3D Letadlo - Střílečka ✈️</h1>
+        <div class="instructions">
+            Letadlo letí vpřed! Střílej na pohybující se cíle!<br>
+            Máte <strong>1 minutu</strong> na sestřelení co nejvíce cílů!
+        </div>
+        <div class="controls">
+            <div class="control-box p1">
+                <h3>Hráč 1 (Zelený) 🟢</h3>
+                <p>W - nahoru</p>
+                <p>S - dolů</p>
+                <p>A - vlevo</p>
+                <p>D - vpravo</p>
+                <p>MEZERNÍK - střelba</p>
+            </div>
+            <div class="control-box p2">
+                <h3>Hráč 2 (Fialový) 🟣</h3>
+                <p>↑ - nahoru</p>
+                <p>↓ - dolů</p>
+                <p>← - vlevo</p>
+                <p>→ - vpravo</p>
+                <p>ENTER - střelba</p>
+            </div>
+        </div>
+        <button onclick="startGame()">START HRY!</button>
+    </div>
+
+    <div id="endScreen">
+        <h1>Hra skončila! 🎮</h1>
+        <div id="finalScores"></div>
+        <div class="winner" id="winner"></div>
+        <button onclick="location.reload()">Hrát znovu!</button>
+    </div>
+
+    <div id="ui">
+        <div id="scores">
+            <div id="player1-score" class="player-score">
+                <div>🟢 Hráč 1</div>
+                <div>Skóre: <span id="p1-score">0</span></div>
+            </div>
+            <div id="timer">1:00</div>
+            <div id="player2-score" class="player-score">
+                <div>🟣 Hráč 2</div>
+                <div>Skóre: <span id="p2-score">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer;
+        let airplane1, airplane2;
+        let targets = [];
+        let bullets1 = [], bullets2 = [];
+        let score1 = 0, score2 = 0;
+        let gameTime = 60; // 60 sekund
+        let gameRunning = false;
+        let timerInterval;
+
+        const keys = {};
+        const GAME_SPEED = 0.3;
+        const BULLET_SPEED = 0.5;
+        const TARGET_SPEED = 0.15;
+
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            keys[e.key] = true;
+
+            if (gameRunning) {
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    shootBullet(airplane1, bullets1, 1);
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    shootBullet(airplane2, bullets2, 2);
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+            keys[e.key] = false;
+        });
+
+        function init() {
+            // Scéna
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87ceeb, 10, 100);
+            scene.background = new THREE.Color(0x87ceeb);
+
+            // Kamera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, -15);
+            camera.lookAt(0, 0, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Světla
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 10);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // Letadlo 1 (zelené)
+            airplane1 = createAirplane(0x00ff00);
+            airplane1.position.set(-3, 0, 0);
+            scene.add(airplane1);
+
+            // Letadlo 2 (fialové)
+            airplane2 = createAirplane(0xff00ff);
+            airplane2.position.set(3, 0, 0);
+            scene.add(airplane2);
+
+            // Mraky na pozadí
+            createClouds();
+
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function createAirplane(color) {
+            const group = new THREE.Group();
+
+            // Tělo letadla
+            const bodyGeometry = new THREE.BoxGeometry(0.5, 0.3, 1.5);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: color });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            group.add(body);
+
+            // Křídla
+            const wingGeometry = new THREE.BoxGeometry(3, 0.1, 0.8);
+            const wing = new THREE.Mesh(wingGeometry, bodyMaterial);
+            wing.position.y = -0.1;
+            group.add(wing);
+
+            // Ocasní ploutev
+            const tailGeometry = new THREE.BoxGeometry(0.05, 0.8, 0.4);
+            const tail = new THREE.Mesh(tailGeometry, bodyMaterial);
+            tail.position.set(0, 0.4, -0.7);
+            group.add(tail);
+
+            return group;
+        }
+
+        function createClouds() {
+            for (let i = 0; i < 20; i++) {
+                const cloudGeometry = new THREE.SphereGeometry(Math.random() * 2 + 1, 8, 8);
+                const cloudMaterial = new THREE.MeshPhongMaterial({
+                    color: 0xffffff,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                cloud.position.set(
+                    Math.random() * 40 - 20,
+                    Math.random() * 10 + 5,
+                    Math.random() * 40 + 10
+                );
+                scene.add(cloud);
+            }
+        }
+
+        function createTarget() {
+            const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+            const material = new THREE.MeshPhongMaterial({
+                color: Math.random() * 0xffffff,
+                emissive: 0x333333
+            });
+            const target = new THREE.Mesh(geometry, material);
+
+            target.position.set(
+                Math.random() * 20 - 10,
+                Math.random() * 8 - 2,
+                Math.random() * 20 + 30
+            );
+
+            target.velocity = {
+                x: (Math.random() - 0.5) * 0.1,
+                y: (Math.random() - 0.5) * 0.1
+            };
+
+            scene.add(target);
+            targets.push(target);
+        }
+
+        function shootBullet(airplane, bulletArray, player) {
+            const bulletGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+            const bulletMaterial = new THREE.MeshPhongMaterial({
+                color: player === 1 ? 0x00ff00 : 0xff00ff,
+                emissive: player === 1 ? 0x00ff00 : 0xff00ff
+            });
+            const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
+
+            bullet.position.copy(airplane.position);
+            bullet.position.z += 1;
+
+            scene.add(bullet);
+            bulletArray.push(bullet);
+        }
+
+        function updateGame() {
+            if (!gameRunning) return;
+
+            // Pohyb letadel
+            const speed = GAME_SPEED;
+
+            // Hráč 1 (WASD)
+            if (keys['w']) airplane1.position.y = Math.min(airplane1.position.y + speed, 8);
+            if (keys['s']) airplane1.position.y = Math.max(airplane1.position.y - speed, -3);
+            if (keys['a']) airplane1.position.x = Math.max(airplane1.position.x - speed, -12);
+            if (keys['d']) airplane1.position.x = Math.min(airplane1.position.x + speed, -1);
+
+            // Hráč 2 (šipky)
+            if (keys['ArrowUp']) airplane2.position.y = Math.min(airplane2.position.y + speed, 8);
+            if (keys['ArrowDown']) airplane2.position.y = Math.max(airplane2.position.y - speed, -3);
+            if (keys['ArrowLeft']) airplane2.position.x = Math.max(airplane2.position.x - speed, 1);
+            if (keys['ArrowRight']) airplane2.position.x = Math.min(airplane2.position.x + speed, 12);
+
+            // Animace letadel (natáčení)
+            airplane1.rotation.z = (keys['a'] ? 0.3 : 0) + (keys['d'] ? -0.3 : 0);
+            airplane2.rotation.z = (keys['ArrowLeft'] ? 0.3 : 0) + (keys['ArrowRight'] ? -0.3 : 0);
+
+            // Pohyb střel
+            updateBullets(bullets1, 1);
+            updateBullets(bullets2, 2);
+
+            // Pohyb cílů
+            targets.forEach((target, index) => {
+                target.position.z -= TARGET_SPEED;
+                target.position.x += target.velocity.x;
+                target.position.y += target.velocity.y;
+                target.rotation.x += 0.02;
+                target.rotation.y += 0.02;
+
+                // Odstraň cíle za obrazovkou
+                if (target.position.z < -10) {
+                    scene.remove(target);
+                    targets.splice(index, 1);
+                }
+            });
+
+            // Generování nových cílů
+            if (Math.random() < 0.02) {
+                createTarget();
+            }
+        }
+
+        function updateBullets(bulletArray, player) {
+            bulletArray.forEach((bullet, bIndex) => {
+                bullet.position.z += BULLET_SPEED;
+
+                // Kontrola kolizí s cíli
+                targets.forEach((target, tIndex) => {
+                    const distance = bullet.position.distanceTo(target.position);
+                    if (distance < 0.8) {
+                        // Zásah!
+                        scene.remove(bullet);
+                        scene.remove(target);
+                        bulletArray.splice(bIndex, 1);
+                        targets.splice(tIndex, 1);
+
+                        if (player === 1) {
+                            score1++;
+                            document.getElementById('p1-score').textContent = score1;
+                        } else {
+                            score2++;
+                            document.getElementById('p2-score').textContent = score2;
+                        }
+
+                        // Efekt exploze
+                        createExplosion(target.position);
+                    }
+                });
+
+                // Odstraň střely mimo obrazovku
+                if (bullet.position.z > 50) {
+                    scene.remove(bullet);
+                    bulletArray.splice(bIndex, 1);
+                }
+            });
+        }
+
+        function createExplosion(position) {
+            for (let i = 0; i < 10; i++) {
+                const geometry = new THREE.SphereGeometry(0.1, 4, 4);
+                const material = new THREE.MeshBasicMaterial({
+                    color: Math.random() > 0.5 ? 0xff6600 : 0xffff00
+                });
+                const particle = new THREE.Mesh(geometry, material);
+                particle.position.copy(position);
+                scene.add(particle);
+
+                setTimeout(() => {
+                    scene.remove(particle);
+                }, 300);
+            }
+        }
+
+        function startGame() {
+            document.getElementById('startScreen').style.display = 'none';
+            gameRunning = true;
+            score1 = 0;
+            score2 = 0;
+            gameTime = 60;
+
+            // Timer
+            timerInterval = setInterval(() => {
+                gameTime--;
+                const minutes = Math.floor(gameTime / 60);
+                const seconds = gameTime % 60;
+                document.getElementById('timer').textContent =
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                if (gameTime <= 0) {
+                    endGame();
+                }
+            }, 1000);
+
+            animate();
+        }
+
+        function endGame() {
+            gameRunning = false;
+            clearInterval(timerInterval);
+
+            const finalScoresDiv = document.getElementById('finalScores');
+            finalScoresDiv.innerHTML = `
+                <div>🟢 Hráč 1: ${score1} bodů</div>
+                <div>🟣 Hráč 2: ${score2} bodů</div>
+            `;
+
+            const winnerDiv = document.getElementById('winner');
+            if (score1 > score2) {
+                winnerDiv.textContent = '🏆 Vyhrál Hráč 1! 🟢';
+            } else if (score2 > score1) {
+                winnerDiv.textContent = '🏆 Vyhrál Hráč 2! 🟣';
+            } else {
+                winnerDiv.textContent = '🤝 Remíza! Oba jste výborní! 🤝';
+            }
+
+            document.getElementById('endScreen').style.display = 'flex';
+        }
+
+        function animate() {
+            if (!gameRunning) return;
+            requestAnimationFrame(animate);
+            updateGame();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Inicializace
+        init();
+    </script>
+</body>
+</html>
